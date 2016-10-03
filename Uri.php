@@ -30,24 +30,7 @@ class Uri implements Interfaces\Uri {
   }
 
   public function getQueryString() {
-    function array_to_query_string($arr, $key_template=null) {
-      $q = array();
-      foreach ($arr as $k => $v) {
-        if (is_array($v)) {
-          if (!$key_template) $next_template = urlencode($k);
-          else $next_template = str_replace("##", urlencode($k), $key_template);
-          $next_template .= '[##]';
-          $q[] = array_to_query_string($v, $next_template);
-        } else {
-          if ($key_template) $key = str_replace("##", urlencode($k), $key_template);
-          else $key = urlencode($k);
-          $q[] = $key.'='.urlencode($v);
-        }
-      }
-      return implode('&', $q);
-    }
-
-    return array_to_query_string($this->query);
+    return self::queryArrayToString($this->query);
   }
 
   public function getScheme() { return $this->scheme; }
@@ -58,9 +41,6 @@ class Uri implements Interfaces\Uri {
   }
 
   public function parse(string $uri) {
-    //TODO: Fix relative uri handling (e.g., passing '../app/content' doesn't work)
-    $this->path = '/';
-
     // Fragment
     if (strlen($uri) == 0) return;
     $parts = explode('#', $uri);
@@ -105,7 +85,7 @@ class Uri implements Interfaces\Uri {
       if (substr($parts,0,1) != '/') $parts = '/'.$parts;
       $this->path = $parts;
     } else {
-      $this->path = '/';
+      $this->path = null;
       $uri = $parts[0];
     }
     
@@ -118,48 +98,94 @@ class Uri implements Interfaces\Uri {
     //TODO: Implement this
   }
 
+  public function setFragment(string $frag) { $this->fragment = trim($frag, '#'); return $this; }
+
   public function setHost(string $host) { $this->host = trim($host, '/'); return $this; }
 
-  public function setPath(string $path) {
-    if (substr($path, 0, 1) != '/') $path = "/$path";
-    $this->path = $path;
-    return $this;
-  }
+  public function setPath(string $path) { $this->path = $path; return $this; }
 
   public function setPort(int $port) { $this->port = $port; return $this; }
 
   public function setQuery($query) {
-    function populate_array_recursive(&$arr, $keys, $val) {
-      if (count($keys) == 1) $arr[$keys[0]] = $val;
-      else {
-        $arr[$keys[0]] = array();
-        array_shift($keys);
-        populate_array_recursive($arr[$keys[0]], $keys, $val);
-      }
-    }
-
     if (is_array($query)) $this->query = $query;
-    else {
-      $q = array();
-      $s = explode('&', $query);
-      foreach ($s as $v) {
-        $keys = array();
-        $parts = explode('=', $v);
-        if (!preg_match('/^([^\\[]+)(?:\\[([^\\]]+)\\])*$/', $parts[0], $keys)) throw new RuntimeException('Query string passed to setQuery has produced an error.');
-        if (count($keys) < 2) throw new RuntimeException('The query string match regex didn\'t work!');
-        array_shift($keys);
-        populate_array_recursive($q, $keys, $parts[1]);
-      }
-    }
-
-    $this->query = $q;
+    else $this->query = self::parseQueryString($query);
     return $this;
   }
 
   public function setScheme(string $scheme) { $this->scheme = $scheme; return $this; }
 
   public function toString() {
-    return $this->schema.'://'.$this->host.$this->path.(count($this->query) ? '?'.$this->getQueryString() : '').($this->fragment ? '#'.$this->fragment : '');
+    $str = '';
+    // Add scheme, if present
+    if ($this->scheme) $str .= $this->scheme.'://';
+
+    // Add host, if present
+    if ($this->host) {
+      $str .= $this->host;
+
+      // Add port if both host and port are present
+      if ($this->port) $str .= ':'.$this->port;
+    } elseif ($this->port) {
+      throw new \RuntimeException('You can\'t render a URI with a port unless it also has a host');
+    }
+
+    // Add path if present
+    if ($this->path) $str .= $this->path;
+
+    // If path not present, add default '/' if either scheme or host is present or if nothing else is present
+    elseif ($this->scheme || $this->host || (!$this->scheme && !$this->host && !$this->port && count($this->query) == 0 && !$this->fragment)) $str .= '/';
+
+    // Add query if present
+    if (count($this->query) > 0) $str .= '?'.$this->getQueryString();
+
+    // Add fragment if present
+    if ($this->fragment) $str .= '#'.$this->fragment;
+    return $str;
+  }
+
+  public static function parseQueryString(string $str) {
+    $q = array();
+    $s = explode('&', $str);
+    foreach ($s as $v) {
+      $matches = array();
+      $parts = explode('=', $v);
+      $parts[0] = urldecode($parts[0]);
+      $parts[1] = urldecode($parts[1]);
+      if (!preg_match('/^([^\\[]+)(\\[.+\\])?$/', $parts[0], $matches)) throw new \RuntimeException('Query string passed to setQuery has produced an error.');
+      if (count($matches) < 2) throw new \RuntimeException('The query string match regex didn\'t work!');
+
+      if (isset($matches[2])) $keys = explode("][", trim($matches[2], '[]'));
+      else $keys = array();
+
+      array_unshift($keys, $matches[1]);
+      self::__parseQueryString($q, $keys, $parts[1]);
+    }
+    return $q;
+  }
+  protected static function __parseQueryString(&$arr, $keys, $val) {
+    if (count($keys) == 1) $arr[$keys[0]] = $val;
+    else {
+      $key = array_shift($keys);
+      if (!isset($arr[$key])) $arr[$key] = array();
+      self::__parseQueryString($arr[$key], $keys, $val);
+    }
+  }
+
+  public static function queryArrayToString(array $queryArray, $keyTemplate=null) {
+    $q = array();
+    foreach ($queryArray as $k => $v) {
+      if (is_array($v)) {
+        if (!$keyTemplate) $next_template = $k;
+        else $next_template = str_replace("##", $k, $keyTemplate);
+        $next_template .= '[##]';
+        $q[] = self::queryArrayToString($v, $next_template);
+      } else {
+        if ($keyTemplate) $key = str_replace("##", $k, $keyTemplate);
+        else $key = $k;
+        $q[] = urlencode($key).'='.urlencode($v);
+      }
+    }
+    return implode('&', $q);
   }
 }
 
