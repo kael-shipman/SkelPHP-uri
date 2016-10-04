@@ -91,6 +91,69 @@ class UriTest extends TestCase {
     }
   }
 
+  public function testRemoveNestedQueryVar() {
+    $uri = $this->getStaticUri('object');
+    $uri->mergeIntoQuery(array('two' => array('c' => array('ii' => null))));
+
+    $expectedResult = $this->getStaticUri('array');
+    $expectedResult = $expectedResult['query'];
+    unset($expectedResult['two']['c']['ii']);
+
+    $this->assertEquals($expectedResult, $uri->getQueryArray(), 'Passing a null value into mergeIntoQuery should delete that value', 0.0, 20, true);
+  }
+
+  public function testOverrideNestedQueryVar() {
+    $uri = $this->getStaticUri('object');
+    $uri->mergeIntoQuery(array('two' => array('c' => array('ii' => 'II'))));
+
+    $expectedResult = $this->getStaticUri('array');
+    $expectedResult = $expectedResult['query'];
+    $expectedResult['two']['c']['ii'] = 'II';
+
+    $this->assertEquals($expectedResult, $uri->getQueryArray(), 'Passing a nested value into mergeIntoQuery should override the current value', 0.0, 20, true);
+  }
+
+  public function testComplexOverrideNestedQueryVar() {
+    $uri = $this->getStaticUri('object');
+    $uri->mergeIntoQuery(array(
+      'encval' => 'some new value',
+      'one' => '2',
+      'two' => array(
+        'b' => 'BEE',
+        'c' => null
+      )
+    ));
+
+    $expectedResult = $this->getStaticUri('array');
+    $expectedResult = $expectedResult['query'];
+    $expectedResult['encval'] = 'some new value';
+    $expectedResult['one'] = '2';
+    $expectedResult['two']['b'] = 'BEE';
+    unset($expectedResult['two']['c']);
+
+    $this->assertEquals($expectedResult, $uri->getQueryArray(), 'Resulting array is different from the expected after attempt to merge new values', 0.0, 20, true);
+  }
+
+  public function testRemoveFromQuery() {
+    $uri = $this->getStaticUri('object');
+    $uri->removeFromQuery(array(
+      'encval' => 'cha',
+      'two' => array(
+        'b' => 'something',
+        'c' => 'nothing'
+      )
+    ));
+
+    $expectedResult = $this->getStaticUri('array');
+    $expectedResult = $expectedResult['query'];
+    unset($expectedResult['encval'], $expectedResult['two']['b'], $expectedResult['two']['c']);
+
+    $this->assertEquals($expectedResult, $uri->getQueryArray(), 'Resulting array is different from the expected after attempted deletion of values', 0.0, 20, true);
+  }
+
+
+
+
 
 
 

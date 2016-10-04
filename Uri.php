@@ -1,6 +1,26 @@
 <?php
 namespace Skel;
 
+/**
+ * A URI class largely derived from the Java Uri class
+ *
+ * Note that this is not meant to be a comprehensive implementation, and there are known
+ * cases in which it will not produce the correct results. These are left unresolved for now
+ * because the application in which this class is used does not require this functionality.
+ * Parsing and string output, for example, will fail for schemes that do not typically have
+ * `://` as their separator (like `mailto:`). Also, cases in which certain parts of the URI
+ * are set and others are not may not produce usable results.
+ *
+ * In short, don't blindly rely on this class. It's small enough to read all the way through,
+ * so if you need something non-standard, do read through it.
+ *
+ * Any functions that don't have documentation here in this file should be documented in
+ * Skel\Interfaces, the header file that defines the Uri interface.
+ *
+ * @author Kael Shipman <kael.shipman@gmail.com>
+ * @license GPL3
+ */
+
 class Uri implements Interfaces\Uri {
   protected $fragment;
   protected $host;
@@ -17,30 +37,49 @@ class Uri implements Interfaces\Uri {
     }
   }
 
+  /**
+   * Internal function for eliminating null values in the query array
+   *
+   * @param array $arr  The array in which to eliminate null values
+   * @return array
+   * @internal
+   */
+  protected function eliminateNullValues(array $arr) {
+    $result = array();
+    foreach ($arr as $k => $v) {
+      if (is_array($v)) {
+        $r = $this->eliminateNullValues($v);
+        if (count($r) > 0) $result[$k] = $r;
+      } else {
+        if ($v !== null) $result[$k] = $v;
+      }
+    }
+    return $result;
+  }
+
   public function getFragment() { return $this->fragment; }
-
   public function getHost() { return $this->host; }
-
   public function getPath() { return $this->path; }
-
   public function getPort() { return $this->port; }
-
-  public function getQueryArray(){
-    return $this->query;
-  }
-
-  public function getQueryString() {
-    return self::queryArrayToString($this->query);
-  }
-
+  public function getQueryArray(){ return $this->query; }
+  public function getQueryString() { return self::queryArrayToString($this->query); }
   public function getScheme() { return $this->scheme; }
 
   public function mergeIntoQuery(array $arrayToMerge) {
-    $this->query = array_replace_recursive($this->query, $arrayToMerge);
+    $result = array_replace_recursive($this->query, $arrayToMerge);
+    $this->query = $this->eliminateNullValues($result);
     return $this;
   }
 
-  public function parse(string $uri) {
+  /**
+   * Internal function for parsing uris
+   *
+   * This is private because a URI is considered immutable, and making this public
+   * would allow a resetting of the URI at any given time.
+   *
+   * @internal
+   */
+  protected function parse(string $uri) {
     // Fragment
     if (strlen($uri) == 0) return;
     $parts = explode('#', $uri);
@@ -94,8 +133,20 @@ class Uri implements Interfaces\Uri {
     $this->host = $uri;
   }
 
+  /**
+   * This is simply a functional front-end for mergeIntoQuery. All it does is set its parameter's
+   * values to null and pass it along to `mergeIntoQuery`.
+   */
   public function removeFromQuery(array $arrayToRemove) {
-    //TODO: Implement this
+    $setValuesToNull = function($arr) use (&$setValuesToNull) {
+      foreach($arr as $k => $v) {
+        if (is_array($v)) $arr[$k] = $setValuesToNull($arr[$k]);
+        else $arr[$k] = null;
+      }
+      return $arr;
+    };
+    $arrayToRemove = $setValuesToNull($arrayToRemove);
+    $this->mergeIntoQuery($arrayToRemove);
   }
 
   public function setFragment(string $frag) { $this->fragment = trim($frag, '#'); return $this; }
