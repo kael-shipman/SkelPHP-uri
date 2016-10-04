@@ -9,7 +9,7 @@ class UriTest extends TestCase {
 
     $this->assertEquals($this->getComplexQuery('array'), $queryArray, 'Resulting query array doesn\'t match expected array', 0.0, 20, true);
 
-    $resultString = \Skel\Uri::queryArrayToString($queryArray);
+    $resultString = \Skel\Uri::arrayToQueryString($queryArray);
     $this->assertEquals($queryString, $resultString, 'Resulting query string doesn\'t match expected string');
   }
 
@@ -26,6 +26,15 @@ class UriTest extends TestCase {
     $this->assertEquals($this->getComplexQuery('string'), $uri->getQueryString(), 'The string representation of the query array doesn\'t match the expected value');
   }
 
+  public function testSetFragment() {
+    $u = $this->getStaticUri('array');
+    $uri = new \Skel\Uri($this->getStaticUri('string'));
+    $this->assertEquals($u['fragment'], $uri->getFragment(), 'The fragment portion of the Uri doesn\'t appear to have parsed correctly');
+
+    $uri->setFragment('newFragment');
+    $this->assertEquals('newFragment', $uri->getFragment(), 'Set fragment didn\'t work :(');
+  }
+
   public function testUsableDefaults() {
     $uri = new \Skel\Uri();
     $this->assertEquals('/', $uri->toString(), 'An empty Uri object should return a single `/` character as a default uri');
@@ -33,57 +42,41 @@ class UriTest extends TestCase {
 
   public function testCanConstructNormalUriFromString() {
     $uriString = $this->getStaticUri('string');
-    $uri = new \Skel\Uri($uriString);
-    $this->assertEquals($uriString, $uri->toString(), 'The resulting string representation of the URI doesn\'t match the expected string');
-  }
-
-  public function testCanConstructNormalUriFromParts() {
     $u = $this->getStaticUri('array');
-    $uri = new \Skel\Uri();
-    $uri
-      ->setScheme($u['scheme'])
-      ->setHost($u['host'])
-      ->setPath($u['path'])
-      ->setQuery($u['query'])
-      ->setFragment($u['fragment'])
-      ->setPort($u['port']);
-
-    $this->assertEquals($this->getStaticUri('string'), $uri->toString(), 'The string representation of the constructed URI differs from the expected string');
+    $uri = new \Skel\Uri($uriString);
+    $this->assertEquals($u['scheme'], $uri->getScheme(), 'Constructor didn\'t parse scheme correctly');
+    $this->assertEquals($u['host'], $uri->getHost(), 'Constructor didn\'t parse host correctly');
+    $this->assertEquals($u['port'], $uri->getPort(), 'Constructor didn\'t parse port correctly');
+    $this->assertEquals($u['path'], $uri->getPath(), 'Constructor didn\'t parse path correctly');
+    $this->assertEquals($u['query'], $uri->getQueryArray(), 'Constructor didn\'t parse query correctly', 0.0, 20, true);
+    $this->assertEquals($u['fragment'], $uri->getFragment(), 'Constructor didn\'t parse fragment correctly');
   }
 
   public function testPartialUrisProduceExpectedResults() {
     $u = $this->getStaticUri('array');
 
-    $uri = new \Skel\Uri();
-    $uri->setScheme($u['scheme']);
+    $uri = new \Skel\Uri($u['scheme'].'://');
     $this->assertEquals($u['scheme'].':///', $uri->toString(), 'When a URI has only a schema, a default path of `/` should be appended');
 
-    $uri = new \Skel\Uri();
-    $uri->setHost($u['host']);
+    $uri = new \Skel\Uri($u['host']);
     $this->assertEquals("$u[host]/", $uri->toString(), 'When a URI has only a host, a default path of `/` should be appended');
 
     $uri = new \Skel\Uri();
     $this->assertEquals('/', $uri->toString(), 'When a URI is empty, a default path of `/` should be returned');
 
-    $uri = new \Skel\Uri();
-    $uri->setPath($u['path']);
+    $uri = new \Skel\Uri($u['path']);
     $this->assertEquals($u['path'], $uri->toString(), 'When a URI has only a path, only that path should be returned');
 
-    $uri = new \Skel\Uri();
-    $uri->setQuery($u['query']);
+    $uri = new \Skel\Uri('?'.$this->getComplexQuery('string'));
     $this->assertEquals('?'.$this->getComplexQuery('string'), $uri->toString(), 'When a URI has only a query, only the query string preceded by a `?` should be returned');
 
-    $uri = new \Skel\Uri();
-    $uri->setFragment($u['fragment']);
+    $uri = new \Skel\Uri('#'.$u['fragment']);
     $this->assertEquals('#'.$u['fragment'], $uri->toString(), 'When a URI has only a fragment, only the fragment preceded by a `#` should be returned');
 
-    $uri = new \Skel\Uri();
-    $uri->setScheme($u['scheme']);
-    $uri->setPath($u['path']);
-    $uri->setPort($u['port']);
+    $uri = new \Skel\Uri($u['scheme'].'://'.':'.$u['port'].$u['path']);
     try {
-      $uri->toString();
-      $this->fail('Trying to render a URI with port and without a host should throw an exception');
+      $str = $uri->toString();
+      $this->fail('Trying to render a URI with port and without a host should throw an exception. Output string was \''.$str.'\'');
     } catch (PHPUnit_Framework_AssertionFailedError $e) {
       throw $e;
     } catch (Exception $e) {
@@ -93,29 +86,29 @@ class UriTest extends TestCase {
 
   public function testRemoveNestedQueryVar() {
     $uri = $this->getStaticUri('object');
-    $uri->mergeIntoQuery(array('two' => array('c' => array('ii' => null))));
+    $uri->updateQueryValues(array('two' => array('c' => array('ii' => null))));
 
     $expectedResult = $this->getStaticUri('array');
     $expectedResult = $expectedResult['query'];
     unset($expectedResult['two']['c']['ii']);
 
-    $this->assertEquals($expectedResult, $uri->getQueryArray(), 'Passing a null value into mergeIntoQuery should delete that value', 0.0, 20, true);
+    $this->assertEquals($expectedResult, $uri->getQueryArray(), 'Passing a null value into updateQueryValues should delete that value', 0.0, 20, true);
   }
 
   public function testOverrideNestedQueryVar() {
     $uri = $this->getStaticUri('object');
-    $uri->mergeIntoQuery(array('two' => array('c' => array('ii' => 'II'))));
+    $uri->updateQueryValues(array('two' => array('c' => array('ii' => 'II'))));
 
     $expectedResult = $this->getStaticUri('array');
     $expectedResult = $expectedResult['query'];
     $expectedResult['two']['c']['ii'] = 'II';
 
-    $this->assertEquals($expectedResult, $uri->getQueryArray(), 'Passing a nested value into mergeIntoQuery should override the current value', 0.0, 20, true);
+    $this->assertEquals($expectedResult, $uri->getQueryArray(), 'Passing a nested value into updateQueryValues should override the current value', 0.0, 20, true);
   }
 
   public function testComplexOverrideNestedQueryVar() {
     $uri = $this->getStaticUri('object');
-    $uri->mergeIntoQuery(array(
+    $uri->updateQueryValues(array(
       'encval' => 'some new value',
       'one' => '2',
       'two' => array(
@@ -172,20 +165,11 @@ class UriTest extends TestCase {
       'fragment' => 'someFragment'
     );
     $uriString = 'https://beefchowmein.com:8080/my/page?'.$this->getComplexQuery('string').'#someFragment';
+
     if ($type == 'string') return $uriString;
     elseif ($type == 'array')  return $uriArray;
-    elseif ($type == 'object') {
-      $uri = new \Skel\Uri();
-      $uri
-        ->setScheme($uriArray['scheme'])
-        ->setHost($uriArray['host'])
-        ->setPath($uriArray['path'])
-        ->setQuery($uriArray['query'])
-        ->setFragment($uriArray['fragment'])
-        ->setPort($uriArray['port']);
-      return $uri;
-    }
-    else throw new RuntimeException('`$type` paramter must e either `string` or `array`');
+    elseif ($type == 'object') return new \Skel\Uri($uriString);
+    else throw new RuntimeException('`$type` paramter must be `string`, `array`, or `object`');
   }
 
   protected function getComplexQuery($type) {

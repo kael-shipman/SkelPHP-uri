@@ -29,6 +29,34 @@ class Uri implements Interfaces\Uri {
   protected $query = array();
   protected $scheme;
 
+  /**
+   * Internal method used to flatten a query array into a uri query string
+   *
+   * While this method is technically intended to be internal, it is made public in recognition
+   * of the fact that it will surely be useful outside the direct context of this Uri class.
+   *
+   * @param array $queryArray  The source array
+   * @param string|null $keyTemplate  An internal argument used to pass on a growing uri key. This
+   * takes the form of `first-key[sub-key][sub-sub-key][sub-sub-sub-key]`, for example.
+   * @return string  The complete, url-encoded uri string representation of the input array
+   */
+  public static function arrayToQueryString(array $queryArray, $keyTemplate=null) {
+    $q = array();
+    foreach ($queryArray as $k => $v) {
+      if (is_array($v)) {
+        if (!$keyTemplate) $next_template = $k;
+        else $next_template = str_replace("##", $k, $keyTemplate);
+        $next_template .= '[##]';
+        $q[] = self::arrayToQueryString($v, $next_template);
+      } else {
+        if ($keyTemplate) $key = str_replace("##", $k, $keyTemplate);
+        else $key = $k;
+        $q[] = urlencode($key).'='.urlencode($v);
+      }
+    }
+    return implode('&', $q);
+  }
+
   public function __construct($uri=null) {
     if ($uri) {
       if (is_string($uri)) $this->parse($uri);
@@ -62,14 +90,8 @@ class Uri implements Interfaces\Uri {
   public function getPath() { return $this->path; }
   public function getPort() { return $this->port; }
   public function getQueryArray(){ return $this->query; }
-  public function getQueryString() { return self::queryArrayToString($this->query); }
+  public function getQueryString() { return self::arrayToQueryString($this->query); }
   public function getScheme() { return $this->scheme; }
-
-  public function mergeIntoQuery(array $arrayToMerge) {
-    $result = array_replace_recursive($this->query, $arrayToMerge);
-    $this->query = $this->eliminateNullValues($result);
-    return $this;
-  }
 
   /**
    * Internal function for parsing uris
@@ -87,7 +109,7 @@ class Uri implements Interfaces\Uri {
       $uri = array_shift($parts);
       $this->fragment = implode('#', $parts);
     } else {
-      $this->fragment = '';
+      $this->fragment = null;
       $uri = $parts[0];
     }
 
@@ -127,15 +149,71 @@ class Uri implements Interfaces\Uri {
       $this->path = null;
       $uri = $parts[0];
     }
-    
-    // Host
+
+    // Port and Host
     if (strlen($uri) == 0) return;
-    $this->host = $uri;
+    $parts = explode(':', $uri);
+    if (count($parts) > 1) {
+      $this->host = array_shift($parts);
+      $this->port = array_shift($parts);
+    } else {
+      $this->host = $parts[0];
+    }
   }
 
   /**
-   * This is simply a functional front-end for mergeIntoQuery. All it does is set its parameter's
-   * values to null and pass it along to `mergeIntoQuery`.
+   * Parses a complex query string into an array, decoding values along the way.
+   *
+   * This is public only because it's a utility function that may be useful outside
+   * of the context of this class.
+   *
+   * @param string $str  The query string to parse
+   * @return array
+   */
+  public static function parseQueryString(string $str) {
+    $q = array();
+    $s = explode('&', $str);
+    foreach ($s as $v) {
+      $matches = array();
+      $parts = explode('=', $v);
+      $parts[0] = urldecode($parts[0]);
+      $parts[1] = urldecode($parts[1]);
+      if (!preg_match('/^([^\\[]+)(\\[.+\\])?$/', $parts[0], $matches)) throw new \RuntimeException('Query string passed to setQuery has produced an error.');
+      if (count($matches) < 2) throw new \RuntimeException('The query string match regex didn\'t work!');
+
+      if (isset($matches[2])) $keys = explode("][", trim($matches[2], '[]'));
+      else $keys = array();
+
+      array_unshift($keys, $matches[1]);
+      self::__parseQueryString($q, $keys, $parts[1]);
+    }
+    return $q;
+  }
+
+  /**
+   * Internal implementation of parseQueryString, used to facilitate recursion
+   * after processing the initial string
+   *
+   * @param array $arr  The target array, passed by reference
+   * @param array $keys  A single-dimensional array of keys, as parsed from something like
+   * `first-key[sub-key][sub-sub-key][sub-sub-sub-key]`
+   * @param string $val  The value to assign when the structure is built
+   * @return void  (This function modifies the target array directly, so doesn't return a value)
+   */
+  protected static function __parseQueryString(&$arr, $keys, $val) {
+    if (count($keys) == 1) $arr[$keys[0]] = $val;
+    else {
+      $key = array_shift($keys);
+      if (!isset($arr[$key])) $arr[$key] = array();
+      self::__parseQueryString($arr[$key], $keys, $val);
+    }
+  }
+
+  /**
+   * This is simply a functional front-end for updateQueryValues. All it does is set its parameter's
+   * values to null and pass it along to `updateQueryValues`.
+   *
+   * @inheritDoc
    */
   public function removeFromQuery(array $arrayToRemove) {
     $setValuesToNull = function($arr) use (&$setValuesToNull) {
@@ -146,24 +224,16 @@ class Uri implements Interfaces\Uri {
       return $arr;
     };
     $arrayToRemove = $setValuesToNull($arrayToRemove);
-    $this->mergeIntoQuery($arrayToRemove);
+    $this->updateQueryValues($arrayToRemove);
   }
 
   public function setFragment(string $frag) { $this->fragment = trim($frag, '#'); return $this; }
-
-  public function setHost(string $host) { $this->host = trim($host, '/'); return $this; }
-
-  public function setPath(string $path) { $this->path = $path; return $this; }
-
-  public function setPort(int $port) { $this->port = $port; return $this; }
 
   public function setQuery($query) {
     if (is_array($query)) $this->query = $query;
     else $this->query = self::parseQueryString($query);
     return $this;
   }
-
-  public function setScheme(string $scheme) { $this->scheme = $scheme; return $this; }
 
   public function toString() {
     $str = '';
@@ -194,49 +264,10 @@ class Uri implements Interfaces\Uri {
     return $str;
   }
 
-  public static function parseQueryString(string $str) {
-    $q = array();
-    $s = explode('&', $str);
-    foreach ($s as $v) {
-      $matches = array();
-      $parts = explode('=', $v);
-      $parts[0] = urldecode($parts[0]);
-      $parts[1] = urldecode($parts[1]);
-      if (!preg_match('/^([^\\[]+)(\\[.+\\])?$/', $parts[0], $matches)) throw new \RuntimeException('Query string passed to setQuery has produced an error.');
-      if (count($matches) < 2) throw new \RuntimeException('The query string match regex didn\'t work!');
-
-      if (isset($matches[2])) $keys = explode("][", trim($matches[2], '[]'));
-      else $keys = array();
-
-      array_unshift($keys, $matches[1]);
-      self::__parseQueryString($q, $keys, $parts[1]);
-    }
-    return $q;
-  }
-  protected static function __parseQueryString(&$arr, $keys, $val) {
-    if (count($keys) == 1) $arr[$keys[0]] = $val;
-    else {
-      $key = array_shift($keys);
-      if (!isset($arr[$key])) $arr[$key] = array();
-      self::__parseQueryString($arr[$key], $keys, $val);
-    }
-  }
-
-  public static function queryArrayToString(array $queryArray, $keyTemplate=null) {
-    $q = array();
-    foreach ($queryArray as $k => $v) {
-      if (is_array($v)) {
-        if (!$keyTemplate) $next_template = $k;
-        else $next_template = str_replace("##", $k, $keyTemplate);
-        $next_template .= '[##]';
-        $q[] = self::queryArrayToString($v, $next_template);
-      } else {
-        if ($keyTemplate) $key = str_replace("##", $k, $keyTemplate);
-        else $key = $k;
-        $q[] = urlencode($key).'='.urlencode($v);
-      }
-    }
-    return implode('&', $q);
+  public function updateQueryValues(array $arrayToMerge) {
+    $result = array_replace_recursive($this->query, $arrayToMerge);
+    $this->query = $this->eliminateNullValues($result);
+    return $this;
   }
 }
 
