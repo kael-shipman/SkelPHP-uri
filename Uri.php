@@ -107,7 +107,7 @@ class Uri implements Interfaces\Uri {
     $parts = explode('#', $uri);
     if (count($parts) > 1) {
       $uri = array_shift($parts);
-      $this->fragment = implode('#', $parts);
+      $this->fragment = urldecode(implode('#', $parts));
     } else {
       $this->fragment = null;
       $uri = $parts[0];
@@ -130,7 +130,7 @@ class Uri implements Interfaces\Uri {
     if (count($parts) > 1) {
       $this->scheme = $parts[0];
       array_shift($parts);
-      $uri = implode('://', $parts);
+      $uri = urldecode(implode('://', $parts));
     } else {
       $this->scheme = null;
       $uri = $parts[0];
@@ -144,7 +144,7 @@ class Uri implements Interfaces\Uri {
       $parts = implode('/', $parts);
 
       if (substr($parts,0,1) != '/') $parts = '/'.$parts;
-      $this->path = $parts;
+      $this->path = urldecode($parts);
     } else {
       $this->path = null;
       $uri = $parts[0];
@@ -154,10 +154,10 @@ class Uri implements Interfaces\Uri {
     if (strlen($uri) == 0) return;
     $parts = explode(':', $uri);
     if (count($parts) > 1) {
-      $this->host = array_shift($parts);
+      $this->host = urldecode(array_shift($parts));
       $this->port = array_shift($parts);
     } else {
-      $this->host = $parts[0];
+      $this->host = urldecode($parts[0]);
     }
   }
 

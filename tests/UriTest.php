@@ -144,6 +144,18 @@ class UriTest extends TestCase {
     $this->assertEquals($expectedResult, $uri->getQueryArray(), 'Resulting array is different from the expected after attempted deletion of values', 0.0, 20, true);
   }
 
+  public function testDecodesUriPartsCorrectly() {
+    $encodedPath = '/this/path%20is/a%20%2Bcomplex%2B%20%26%20very%20special/path';
+    $encodedQuery = '%2Bq=a%20very%20%2Bspecial%2B%20query';
+    $encodedFragment = '%2Bspecial%2B%20fragment';
+    $fullEncodedUri = "$encodedPath?$encodedQuery#$encodedFragment";
+    $uri = new \Skel\Uri($fullEncodedUri);
+    $this->assertEquals(urldecode($encodedPath), $uri->getPath(), 'Path was not decoded correctly :(');
+    $this->assertTrue(isset($uri->getQueryArray()['+q']), 'Special characters in query keys aren\'t decoded correctly');
+    $this->assertEquals('a very +special+ query', $uri->getQueryArray()['+q'], 'Query values aren\'t decoded correctly');
+    $this->assertEquals('+special+ fragment', $uri->getFragment(), 'Fragment isn\'t decoded correctly');
+  }
+
 
 
 
