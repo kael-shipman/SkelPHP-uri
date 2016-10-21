@@ -13,15 +13,320 @@ class UriTest extends TestCase {
     $this->assertEquals($queryString, $resultString, 'Resulting query string doesn\'t match expected string');
   }
 
+  public function testSpecialFileUriConstruction() {
+    try {
+      $uri = new \Skel\Uri('file:///');
+      $this->assertEquals('file', $uri->getScheme());
+      $this->assertEquals('/', $uri->getPath());
+      $this->assertEquals('localhost', $uri->getHost());
+      $this->assertFalse($uri->getPort());
+    } catch (InvalidArgumentException $e) { $this->fail("File scheme is special and should accept the minimalist `file:///` constructor"); }
+  }
+
+  public function testMinimalFileUriConstruction() {
+    try {
+      $uri = new \Skel\Uri('file:');
+      $this->assertEquals('file', $uri->getScheme());
+      $this->assertEquals('/', $uri->getPath());
+      $this->assertEquals('localhost', $uri->getHost());
+      $this->assertFalse($uri->getPort());
+    } catch (InvalidArgumentException $e) { $this->fail("File scheme is special and should accept the minimalist `file:///` constructor"); }
+  }
+
+  public function testNormalFileUriConstruction() {
+    try {
+      $uri = new \Skel\Uri('file://localhost/some/major/path');
+      $this->assertEquals('file', $uri->getScheme());
+      $this->assertEquals('localhost', $uri->getHost());
+      $this->assertEquals('/some/major/path', $uri->getPath());
+      $this->assertFalse($uri->getPort());
+    } catch (InvalidArgumentException $e) { $this->fail("Normal file path should have parsed correctly"); }
+  }
+
+  public function testImpliedHostFileConstructor() {
+    try {
+      $uri = new \Skel\Uri('file:///some/major/path');
+      $this->assertEquals('file', $uri->getScheme());
+      $this->assertEquals('localhost', $uri->getHost());
+      $this->assertFalse($uri->getPort());
+      $this->assertEquals('/some/major/path', $uri->getPath());
+    } catch (InvalidArgumentException $e) { $this->fail("Normal file path with implied host should have parsed correctly"); }
+  }
+
+  public function testJustSchemeAndHostWorks() {
+    // Just scheme and host defaults to known port and path `/`, blank query and blank fragment
+    try {
+      $scheme = 'http';
+      $host = 'example.com';
+      $uri = new \Skel\Uri("$scheme://$host");
+      $this->assertEquals($scheme, $uri->getScheme());
+      $this->assertEquals($host, $uri->getHost());
+      $this->assertEquals(80, $uri->getPort());
+      $this->assertEquals('/', $uri->getPath());
+      $this->assertEquals('', $uri->getQueryString());
+      $this->assertEquals('', $uri->getFragment());
+    } catch (InvalidArgumentException $e) { $this->fail("`$scheme://$host` should default to known http port 80 and default path `/`, but throws exception instead"); }
+  }
+
+  public function testUnknownSchemeWithValidHostAndPort() {
+    // Unknown scheme with valid host and port should work. Defaults to path `/`, blank query, blank fragment
+    try {
+      $scheme = 'kael';
+      $host = 'example.com';
+      $port = 7338;
+      $uri = new \Skel\Uri("$scheme://$host:$port");
+      $this->assertEquals($scheme, $uri->getScheme());
+      $this->assertEquals($host, $uri->getHost());
+      $this->assertEquals($port, $uri->getPort());
+      $this->assertEquals('/', $uri->getPath(), "Should default to path `/` if valid scheme, host and port are given");
+      $this->assertEquals('', $uri->getQueryString());
+      $this->assertEquals('', $uri->getFragment());
+    } catch (InvalidArgumentException $e) { $this->fail("Should NOT throw exception if scheme, host and port are provided"); }
+  }
+
+  public function testUriWithNoSchemeButKnownPort() {
+    // Valid Uri with no scheme but known port should work. 
+    try {
+      $host = 'example.com';
+      $port = 80;
+      $uri = new \Skel\Uri("//$host:$port");
+      $this->assertEquals('http', $uri->getScheme());
+      $this->assertEquals($host, $uri->getHost());
+      $this->assertEquals($port, $uri->getPort());
+      $this->assertEquals('/', $uri->getPath(), "Should default to path `/` if valid scheme, host and port are given");
+      $this->assertEquals('', $uri->getQueryString());
+      $this->assertEquals('', $uri->getFragment());
+    } catch (InvalidArgumentException $e) { $this->fail("Should NOT throw exception on valid uri without scheme, but with known port"); }
+  }
+
+  public function testUriWithKnownSchemeHostAndQueryWithoutPath() {
+    // Known scheme, host, query should default to path `/` and blank fragment 
+    $u = $this->getStaticUri('array');
+    try {
+      $queryString = $this->getComplexQuery('string');
+      $uri = new \Skel\Uri("$u[scheme]://$u[host]?$queryString");
+      $this->assertEquals($u['scheme'], $uri->getScheme());
+      $this->assertEquals($u['host'], $uri->getHost());
+      $this->assertEquals('/', $uri->getPath());
+      $this->assertEquals($queryString, $uri->getQueryString());
+      $this->assertEquals('', $uri->getFragment());
+    } catch (InvalidArgumentException $e) { $this->fail("Should accept known scheme, host and query, defaulting to path `/` and blank fragment"); }
+  }
+
+  public function testUriWithSchemeHostFragmentButNoPath() {
+    // Known scheme, host, fragment should default to path `/` and blank query
+    $u = $this->getStaticUri('array');
+    try {
+      $uri = new \Skel\Uri("$u[scheme]://$u[host]#frag");
+      $this->assertEquals($u['scheme'], $uri->getScheme());
+      $this->assertEquals($u['host'], $uri->getHost());
+      $this->assertEquals('/', $uri->getPath());
+      $this->assertEquals('', $uri->getQueryString());
+      $this->assertEquals('frag', $uri->getFragment());
+    } catch (InvalidArgumentException $e) { $this->fail("Should accept known scheme, host and fragment, defaulting to path `/` and blank query"); }
+  }
+
+  public function testCompleteValidUriString() {
+    // Complete uri string should be valid
+    try {
+      $uriString = $this->getStaticUri('string');
+      $u = $this->getStaticUri('array');
+      $uri = new \Skel\Uri($uriString);
+      $this->assertEquals($u['scheme'], $uri->getScheme(), 'Constructor didn\'t parse scheme correctly');
+      $this->assertEquals($u['host'], $uri->getHost(), 'Constructor didn\'t parse host correctly');
+      $this->assertEquals($u['port'], $uri->getPort(), 'Constructor didn\'t parse port correctly');
+      $this->assertEquals($u['path'], $uri->getPath(), 'Constructor didn\'t parse path correctly');
+      $this->assertEquals($u['query'], $uri->getQueryArray(), 'Constructor didn\'t parse query correctly', 0.0, 20, true);
+      $this->assertEquals($u['fragment'], $uri->getFragment(), 'Constructor didn\'t parse fragment correctly');
+    } catch(InvalidArgumentException $e) { $this->fail("Should NOT throw exception on valid absolute URI"); }
+  }
+
+  public function testNullArgumentException() {
+    // Null throws exception
+    try {
+      $uri = new \Skel\Uri();
+      $this->fail("Should throw InvalidArgumentException when passing null");
+    } catch (TypeError $e) { $this->assertTrue(true); }
+  }
+
+  public function testJustSchemeWithoutDefaultHostThrowsException() {
+    // Just scheme throws exception
+    try {
+      $uri = new \Skel\Uri('http:');
+      $this->fail("Should throw InvalidArgumentException when passing just a scheme");
+    } catch (InvalidArgumentException $e) { $this->assertTrue(true); }
+  }
+
+  public function testUnknownSchemeAndHostWithoutPort() {
+    // Just unknown scheme and host throws exception because no port can be assumed
+    try {
+      $uri = new \Skel\Uri("blah://example.com");
+      $this->fail("Unknown scheme without specified port should throw exception");
+    } catch (InvalidArgumentException $e) { $this->assertTrue(true); }
+  }
+
+  public function testNoSchemeThrowsException() {
+    // Any valid uri without scheme and port throws exception
+    try {
+      $uri = new \Skel\Uri("//example.com/test/string?something=nothing");
+      $this->fail("Should throw exception if no scheme provided");
+    } catch (InvalidArgumentException $e) { $this->assertTrue(true); }
+  }
+
+  public function testCopyConstructor() {
+    $r = $this->getStaticUri('object');
+
+    // Copy constructor
+    try {
+      $uri = new \Skel\Uri('', $r);
+      $this->assertEquals($r->getScheme(), $uri->getScheme());
+      $this->assertEquals($r->getPort(), $uri->getPort());
+      $this->assertEquals($r->getHost(), $uri->getHost());
+      $this->assertEquals($r->getPath(), $uri->getPath());
+      $this->assertEquals($r->getQueryString(), $uri->getQueryString());
+      $this->assertEquals($r->getFragment(), $uri->getFragment());
+    } catch (InvalidArgumentException $e) { $this->fail("Should not throw exception when cloning"); }
+  }
+
+  public function testChangingToKnownScheme() {
+    $r = $this->getStaticUri('object');
+    $ftpPort = \Skel\Uri::getPortForScheme('ftp');
+    // Changing to known scheme
+    try {
+      $uri = new \Skel\Uri('ftp:', $r);
+      $this->assertEquals('ftp', $uri->getScheme());
+      $this->assertEquals($ftpPort, $uri->getPort(), "Should automatically change port when changing scheme to known scheme");
+      $this->assertEquals($r->getHost(), $uri->getHost());
+      $this->assertEquals($r->getPath(), $uri->getPath());
+      $this->assertEquals($r->getQueryString(), $uri->getQueryString());
+      $this->assertEquals($r->getFragment(), $uri->getFragment());
+    } catch (InvalidArgumentException $e) { $this->fail("Should not throw exception when changing to known scheme"); }
+  }
+
+  public function testChangingHosts() {
+    $r = $this->getStaticUri('object');
+    // Changing hosts
+    try {
+      $uri = new \Skel\Uri('//new.example.com', $r);
+      $this->assertEquals($r->getScheme(), $uri->getScheme());
+      $this->assertEquals($r->getPort(), $uri->getPort());
+      $this->assertEquals('new.example.com', $uri->getHost());
+      $this->assertEquals('/', $uri->getPath());
+      $this->assertEquals('', $uri->getQueryString());
+      $this->assertEquals('', $uri->getFragment());
+    } catch (InvalidArgumentException $e) { $this->fail("Should not throw exception when changing hosts"); }
+  }
+
+  public function testRelativePath() {
+    $r = $this->getStaticUri('object');
+    // Relative path
+    try {
+      $uri = new \Skel\Uri('me', $r);
+      $this->assertEquals($r->getScheme(), $uri->getScheme());
+      $this->assertEquals($r->getPort(), $uri->getPort());
+      $this->assertEquals($r->getHost(), $uri->getHost());
+      $this->assertEquals($r->getPath().'/me', $uri->getPath());
+      $this->assertEquals('', $uri->getQueryString(), "Changing path should blank the query string");
+      $this->assertEquals('', $uri->getFragment(), "Changing path should blank the fragment");
+    } catch (InvalidArgumentException $e) { $this->fail("Should not throw exception when changing paths"); }
+  }
+
+  public function testChangeToPreviousDir() {
+    $r = $this->getStaticUri('object');
+    // Dot path
+    try {
+      $uri = new \Skel\Uri('../', $r);
+      $this->assertEquals($r->getScheme(), $uri->getScheme());
+      $this->assertEquals($r->getHost(), $uri->getHost());
+      $this->assertEquals($r->getPort(), $uri->getPort());
+      $this->assertEquals('/my', $uri->getPath());
+      $this->assertEquals('', $uri->getQueryString(), "Changing path should blank the query string");
+      $this->assertEquals('', $uri->getFragment(), "Changing path should blank the fragment");
+    } catch (InvalidArgumentException $e) { $this->fail("Should not throw exception when changing to earlier directory within path"); }
+  }
+
+  public function testChangeToSiblingDir() {
+    $r = $this->getStaticUri('object');
+    // Changing to sibling directory
+    try {
+      $uri = new \Skel\Uri('../new/path', $r);
+      $this->assertEquals($r->getScheme(), $uri->getScheme());
+      $this->assertEquals($r->getHost(), $uri->getHost());
+      $this->assertEquals($r->getPort(), $uri->getPort());
+      $this->assertEquals('/my/new/path', $uri->getPath());
+      $this->assertEquals('', $uri->getQueryString(), "Changing path should blank the query string");
+      $this->assertEquals('', $uri->getFragment(), "Changing path should blank the fragment");
+    } catch (InvalidArgumentException $e) { $this->fail("Should not throw exception when changing to sibling directory"); }
+  }
+
+  public function testChangeToRootDir() {
+    $r = $this->getStaticUri('object');
+    // Changing to root
+    try {
+      $uri = new \Skel\Uri('/', $r);
+      $this->assertEquals($r->getScheme(), $uri->getScheme());
+      $this->assertEquals($r->getHost(), $uri->getHost());
+      $this->assertEquals($r->getPort(), $uri->getPort());
+      $this->assertEquals('/', $uri->getPath());
+      $this->assertEquals('', $uri->getQueryString(), "Changing path should blank the query string");
+      $this->assertEquals('', $uri->getFragment(), "Changing path should blank the fragment");
+    } catch (InvalidArgumentException $e) { $this->fail("Should not throw exception when changing to root"); }
+  }
+
+  public function testChangeQuery() {
+    $r = $this->getStaticUri('object');
+    // Changing query
+    try {
+      $uri = new \Skel\Uri('?something=new', $r);
+      $this->assertEquals($r->getScheme(), $uri->getScheme());
+      $this->assertEquals($r->getHost(), $uri->getHost());
+      $this->assertEquals($r->getPort(), $uri->getPort());
+      $this->assertEquals($r->getPath(), $uri->getPath());
+      $this->assertEquals('something=new', $uri->getQueryString());
+      $this->assertEquals('', $uri->getFragment());
+    } catch (InvalidArgumentException $e) { $this->fail("Should not throw exception when changing query string"); }
+  }
+
+  public function testChangeFragment() {
+    $r = $this->getStaticUri('object');
+    // Changing fragment
+    try {
+      $uri = new \Skel\Uri('#newFrag', $r);
+      $this->assertEquals($r->getScheme(), $uri->getScheme());
+      $this->assertEquals($r->getHost(), $uri->getHost());
+      $this->assertEquals($r->getPort(), $uri->getPort());
+      $this->assertEquals($r->getPath(), $uri->getPath());
+      $this->assertEquals($r->getQueryString(), $uri->getQueryString());
+      $this->assertEquals('newFrag', $uri->getFragment());
+    } catch (InvalidArgumentException $e) { $this->fail("Should not throw exception when changing fragment"); }
+  }
+
+  public function testChangingBeyondRootThrowsException() {
+    $r = $this->getStaticUri('object');
+    // Changing beyond root 
+    try {
+      $uri = new \Skel\Uri('../../../', $r);
+      $this->fail("Should throw exception when changing beyond root");
+    } catch (InvalidArgumentException $e) { $this->assertTrue(true); }
+  }
+
+  public function testChangingToUnknownSchemeThrowsException() {
+    // Changing to unknown scheme
+    try {
+      $uri = new \Skel\Uri('abc:', $r);
+      $this->fail("Should throw error when changing to unknown scheme because port cannot be inferred");
+    } catch (InvalidArgumentException $e) { $this->assertTrue(true); }
+  }
+
   public function testSetQueryFromString() {
-    $uri = new \Skel\Uri();
+    $uri = $this->getStaticUri('object');
     $queryString = $this->getComplexQuery('string');
     $uri->setQuery($queryString);
     $this->assertEquals($queryString, $uri->getQueryString(), 'The string representation of the parsed query string doesn\'t match the original');
   }
 
   public function testSetQueryFromArray() {
-    $uri = new \Skel\Uri();
+    $uri = $this->getStaticUri('object');
     $uri->setQuery($this->getComplexQuery('array'));
     $this->assertEquals($this->getComplexQuery('string'), $uri->getQueryString(), 'The string representation of the query array doesn\'t match the expected value');
   }
@@ -35,53 +340,70 @@ class UriTest extends TestCase {
     $this->assertEquals('newFragment', $uri->getFragment(), 'Set fragment didn\'t work :(');
   }
 
-  public function testUsableDefaults() {
-    $uri = new \Skel\Uri();
-    $this->assertEquals('/', $uri->toString(), 'An empty Uri object should return a single `/` character as a default uri');
+  public function testWellKnownPortFunctions() {
+    $this->assertEquals(80, \Skel\Uri::getPortForScheme('http'));
+    $this->assertEquals(80, \Skel\Uri::getPortForScheme('HtTp'));
+    $this->assertEquals('http', \Skel\Uri::getSchemeForPort(80));
   }
 
-  public function testCanConstructNormalUriFromString() {
-    $uriString = $this->getStaticUri('string');
-    $u = $this->getStaticUri('array');
-    $uri = new \Skel\Uri($uriString);
-    $this->assertEquals($u['scheme'], $uri->getScheme(), 'Constructor didn\'t parse scheme correctly');
-    $this->assertEquals($u['host'], $uri->getHost(), 'Constructor didn\'t parse host correctly');
-    $this->assertEquals($u['port'], $uri->getPort(), 'Constructor didn\'t parse port correctly');
-    $this->assertEquals($u['path'], $uri->getPath(), 'Constructor didn\'t parse path correctly');
-    $this->assertEquals($u['query'], $uri->getQueryArray(), 'Constructor didn\'t parse query correctly', 0.0, 20, true);
-    $this->assertEquals($u['fragment'], $uri->getFragment(), 'Constructor didn\'t parse fragment correctly');
-  }
+  public function testSchemeAndPortChanges() {
+    $a = $this->getStaticUri('array');
+    $r = $this->getStaticUri('object');
+    $ftpPort = \Skel\Uri::getPortForScheme('ftp');
 
-  public function testPartialUrisProduceExpectedResults() {
-    $u = $this->getStaticUri('array');
-
-    $uri = new \Skel\Uri($u['scheme'].'://');
-    $this->assertEquals($u['scheme'].':///', $uri->toString(), 'When a URI has only a schema, a default path of `/` should be appended');
-
-    $uri = new \Skel\Uri($u['host']);
-    $this->assertEquals("$u[host]/", $uri->toString(), 'When a URI has only a host, a default path of `/` should be appended');
-
-    $uri = new \Skel\Uri();
-    $this->assertEquals('/', $uri->toString(), 'When a URI is empty, a default path of `/` should be returned');
-
-    $uri = new \Skel\Uri($u['path']);
-    $this->assertEquals($u['path'], $uri->toString(), 'When a URI has only a path, only that path should be returned');
-
-    $uri = new \Skel\Uri('?'.$this->getComplexQuery('string'));
-    $this->assertEquals('?'.$this->getComplexQuery('string'), $uri->toString(), 'When a URI has only a query, only the query string preceded by a `?` should be returned');
-
-    $uri = new \Skel\Uri('#'.$u['fragment']);
-    $this->assertEquals('#'.$u['fragment'], $uri->toString(), 'When a URI has only a fragment, only the fragment preceded by a `#` should be returned');
-
-    $uri = new \Skel\Uri($u['scheme'].'://'.':'.$u['port'].$u['path']);
+    // When scheme changes to known scheme, port should change, too
     try {
-      $str = $uri->toString();
-      $this->fail('Trying to render a URI with port and without a host should throw an exception. Output string was \''.$str.'\'');
-    } catch (PHPUnit_Framework_AssertionFailedError $e) {
-      throw $e;
-    } catch (Exception $e) {
-      // Arriving here is correct, so there's nothing to do
-    }
+      $this->assertNotEquals('ftp', $r->getScheme(), "The original Uri has the same scheme as the one we're testing! You should change this to get an accurate test.");
+      $u = new \Skel\Uri('ftp:', $r);
+      $this->assertEquals($ftpPort, $u->getPort());
+    } catch (InvalidArgumentException $e) { $this->fail("Should successfully change port to $ftpPort when changing scheme to FTP"); }
+
+    // When scheme changes to unknown scheme without port specified, should throw exception
+    try {
+      $u = new \Skel\Uri('abc:', $r);
+      $this->fail("When scheme changes to unknown scheme without port specified, should throw exception");
+    } catch (InvalidArgumentException $e) { $this->assertTrue(true); }
+
+    // Should be able to change to unknown scheme if port also provided
+    try {
+      $u = new \Skel\Uri('abc://'.$r->getHost().':123', $r);
+      $this->assertEquals('abc', $u->getScheme());
+      $this->assertEquals(123, $u->getPort());
+    } catch (InvalidArgumentException $e) { $this->fail("Should be able to change to unknown scheme if port also provided"); }
+
+    // Can't test these because can't change port and scheme separately
+    //
+    // When port changes to known port, scheme should change, too
+    // Should be able to change to unknown port regardless of scheme
+    // Should be able to change to known port and force nonstandard scheme
+  }
+
+  public function testPrintRelativeStrings() {
+    $r = $this->getStaticUri('object');
+
+    // Should print full string when scheme changes
+    $u = new \Skel\Uri('ftp:', $r);
+    $this->assertEquals($u->toString(), $u->toRelativeString($r), "Should print full string when scheme changes");
+
+    // Should print full string when host changes
+    $u = new \Skel\Uri($r->getScheme().'://new-example.com', $r);
+    $this->assertEquals($u->toString(), $u->toRelativeString($r), "Should print full string when host changes");
+
+    // Should print full string when port changes
+    $u = new \Skel\Uri('https://'.$r->getHost().':443', $r);
+    $this->assertEquals($u->toString(), $u->toRelativeString($r), "Should print full string when port changes");
+
+    // Should print path/query/fragment when path changes
+    $u = new \Skel\Uri('/new/different/path', $r);
+    $this->assertEquals('/new/different/path?'.$r->getQueryString().'#'.$r->getFragment(), $u->toRelativeString($r), "Should print path/query/fragment when path changes");
+
+    // Should print query/fragment when just query changes
+    $u = new \Skel\Uri('?new=query', $r);
+    $this->assertEquals('?new=query#'.$r->getFragment(), $u->toRelativeString($r), "Should print query/fragment when query changes");
+
+    // Should print fragment when just fragment changes
+    $u = new \Skel\Uri('#newFrag', $r);
+    $this->assertEquals('#newFrag', $u->toRelativeString($r), "Should print just fragment when just fragment changes");
   }
 
   public function testRemoveNestedQueryVar() {
@@ -148,7 +470,7 @@ class UriTest extends TestCase {
     $encodedPath = '/this/path%20is/a%20%2Bcomplex%2B%20%26%20very%20special/path';
     $encodedQuery = '%2Bq=a%20very%20%2Bspecial%2B%20query';
     $encodedFragment = '%2Bspecial%2B%20fragment';
-    $fullEncodedUri = "$encodedPath?$encodedQuery#$encodedFragment";
+    $fullEncodedUri = "http://example.com$encodedPath?$encodedQuery#$encodedFragment";
     $uri = new \Skel\Uri($fullEncodedUri);
     $this->assertEquals(urldecode($encodedPath), $uri->getPath(), 'Path was not decoded correctly :(');
     $this->assertTrue(isset($uri->getQueryArray()['+q']), 'Special characters in query keys aren\'t decoded correctly');

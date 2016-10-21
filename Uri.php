@@ -28,6 +28,10 @@ class Uri implements Interfaces\Uri {
   protected $port;
   protected $query = array();
   protected $scheme;
+  protected static $regexMap = array('generic' => '/^(?:([^:\/?#]+):)?(?:\/\/([^\/?:#]*))?(?::(\d+))?([^?#]*)(?:\?([^#]*))?(?:#(.*))?/');
+  protected static $wellKnownPorts = array('file' => false, 'ftp' => 21, 'ssh' => 22, 'telnet' => 23, 'time' => 37, 'dns' => 53, 'http' => 80, 'pop3' => 110, 'ldap' => 389, 'https' => 443, 'dhcp' => 547);
+  protected static $wellKnownHosts = array('file' => 'localhost');
+  protected static $explicitlySet = array('scheme' => false, 'host' => false, 'port' => false);
 
   /**
    * Internal method used to flatten a query array into a uri query string
@@ -57,11 +61,80 @@ class Uri implements Interfaces\Uri {
     return implode('&', $q);
   }
 
-  public function __construct($uri=null) {
-    if ($uri) {
-      if (is_string($uri)) $this->parse($uri);
-      //TODO: Implement clone constructor
-      else throw new \RuntimeException('Unsupported object passed to Uri constructor');
+  public function __construct(string $uri, Interfaces\Uri $r=null) {
+    $uri = static::parse($uri, $r);
+
+    // If we've got a reference point...
+    if ($r) {
+
+      // If we don't have a scheme, copy it over
+      if ($uri['scheme'] == '') $this->scheme = $r->getScheme();
+
+      // If we do, make sure we also have a port
+      else {
+        $this->scheme = $uri['scheme'];
+        if ($uri['port'] == '') {
+          if (isset(static::$wellKnownPorts[$uri['scheme']])) $uri['port'] = static::$wellKnownPorts[$uri['scheme']];
+          else throw new \InvalidArgumentException("Can't change to an unknown scheme without specifying the port");
+        }
+      }
+
+      // If we get a new host, wipe everthing else clean
+      if ($uri['host'] != '') {
+        $this->host = $uri['host'];
+        $this->path = ($uri['path'] == '' ? '/' : $uri['path']);
+        $this->setQuery($uri['query'] ?: '');
+        $this->fragment = $uri['fragment'] ?: '';
+      } else {
+        $this->host = $r->getHost();
+        $this->path = $uri['path'] ?: $r->getPath();
+        $this->setQuery($uri['query'] ?: $r->getQueryArray());
+        $this->fragment = $uri['fragment'] ?: $r->getFragment();
+      }
+
+      // Set port
+      $this->port = (int)($uri['port'] ?: $r->getPort());
+
+      if (array_search($this->host, static::$wellKnownHosts) != $this->scheme) $this->explicitlySet['host'] = true;
+      if (array_search($this->port, static::$wellKnownPorts) != $this->scheme) $this->explicitlySet['port'] = true;
+      if (isset(static::$wellKnownPorts[$this->scheme]) && static::$wellKnownPorts[$this->scheme] != $this->port) $this->explicitlySet['scheme'] = true;
+
+    // If we're parsing an absolute URI....
+    } else {
+      // If there's no scheme, we can't go forward
+      if (!$uri['scheme']) {
+        if (!$uri['port'] || ($uri['scheme'] = array_search($uri['port'], static::$wellKnownPorts)) === false) throw new \InvalidArgumentException("You must specify a scheme for your uri, specify a port with a known scheme, or pass another valid uri object as a relative reference.");
+        // If we make it past this, $uri['scheme'] has been set by a port lookup in $wellKnownPorts
+      }
+
+      // If there is a scheme, it's been explicitly set
+      $this->explicitlySet['scheme'] = true;
+
+      // If there's no port, we can only go forward if we're using a scheme with a known port
+      if (!$uri['port']) {
+        if (!isset(static::$wellKnownPorts[$uri['scheme']])) throw new \InvalidArgumentException("You must specify either a port, a scheme with a known port, or another valid uri as a relative reference from which to derive a port.");
+        else $uri['port'] = static::$wellKnownPorts[$uri['scheme']];
+      } else {
+        $this->explicitlySet['port'] = true;
+      }
+
+      // If there's no host, we can only go foward if we're using a scheme with an implied host ("file")
+      if (!$uri['host']) {
+        if (!isset(static::$wellKnownHosts[$uri['scheme']])) throw new \InvalidArgumentException("You must specify a host for a scheme with no known implied hosts (`$uri[scheme]`). Note that currently `file` is the only scheme with an implied host (`localhost`).");
+        else $uri['host'] = static::$wellKnownHosts[$uri['scheme']];
+      } else {
+        $this->explicitlySet['host'] = true;
+      }
+
+      // If there's no path, default to root path
+      if (!$uri['path']) $uri['path'] = '/';
+
+      $this->scheme = $uri['scheme'];
+      $this->host = $uri['host'];
+      $this->port = $uri['port'];
+      $this->path = $uri['path'];
+      $this->setQuery($uri['query']);
+      $this->fragment = $uri['fragment'];
     }
   }
 
@@ -89,75 +162,53 @@ class Uri implements Interfaces\Uri {
   public function getHost() { return $this->host; }
   public function getPath() { return $this->path; }
   public function getPort() { return $this->port; }
+
+  public static function getPortForScheme(string $scheme) {
+    $scheme = strtolower($scheme);
+    if (!isset(static::$wellKnownPorts[$scheme])) return null;
+    else return static::$wellKnownPorts[$scheme];
+  }
+
   public function getQueryArray(){ return $this->query; }
   public function getQueryString() { return self::arrayToQueryString($this->query); }
   public function getScheme() { return $this->scheme; }
 
+  public static function getSchemeForPort(int $port) {
+    if (($scheme = array_search($port, static::$wellKnownPorts)) === false) return null;
+    else return $scheme;
+  }
+
   /**
-   * Internal function for parsing uris
+   * Function for parsing uris
    *
-   * This is private because a URI is considered immutable, and making this public
-   * would allow a resetting of the URI at any given time.
+   * Note: This does not create a Uri object, nor set any properties. It is used internally by the
+   * constructor to get the available parts of the uri. It is INCOMPLETE right now -- see notes below
    *
-   * @internal
    */
-  protected function parse(string $uri) {
-    // Fragment
-    if (strlen($uri) == 0) return;
-    $parts = explode('#', $uri);
-    if (count($parts) > 1) {
-      $uri = array_shift($parts);
-      $this->fragment = urldecode(implode('#', $parts));
-    } else {
-      $this->fragment = null;
-      $uri = $parts[0];
+  public static function parse(string $uri, $r = null) {
+    $regex = false;
+    if (preg_match('/^([^:\/?#]+)/', $uri, $scheme)) {
+      if (isset(static::$regexMap[$scheme[1]])) $regex = static::$regexMap[$scheme[1]];
+    } elseif ($r) {
+      if (isset(static::$regexMap[$r->getScheme()])) $regex = static::$regexMap[$r->getScheme()];
     }
 
-    // Query
-    if (strlen($uri) == 0) return;
-    $parts = explode('?', $uri);
-    if (count($parts) > 1) {
-      $uri = array_shift($parts);
-      $this->setQuery(implode('?', $parts));
-    } else {
-      $this->query = array();
-      $uri = $parts[0];
-    }
+    // NOTE: This is not actually a regex for a vanilla URI; it is a regex for a URL, the difference
+    // being that an optional port may follow the host part.
+    if (!$regex) $regex = static::$regexMap['generic'];
 
-    // Scheme
-    if (strlen($uri) == 0) return;
-    $parts = explode('://',$uri);
-    if (count($parts) > 1) {
-      $this->scheme = $parts[0];
-      array_shift($parts);
-      $uri = urldecode(implode('://', $parts));
+    if (preg_match($regex, $uri, $matches)) {
+      //TODO: Make this so that it can actually handle various different URI parsers with differing results
+      return array(
+        'scheme' => $matches[1],
+        'host' => $matches[2],
+        'port' => $matches[3],
+        'path' => $matches[4],
+        'query' => $matches[5],
+        'fragment' => $matches[6],
+      );
     } else {
-      $this->scheme = null;
-      $uri = $parts[0];
-    }
-
-    // Path
-    if (strlen($uri) == 0) return;
-    $parts = explode('/', $uri);
-    if (count($parts) > 1) {
-      $uri = array_shift($parts);
-      $parts = implode('/', $parts);
-
-      if (substr($parts,0,1) != '/') $parts = '/'.$parts;
-      $this->path = urldecode($parts);
-    } else {
-      $this->path = null;
-      $uri = $parts[0];
-    }
-
-    // Port and Host
-    if (strlen($uri) == 0) return;
-    $parts = explode(':', $uri);
-    if (count($parts) > 1) {
-      $this->host = urldecode(array_shift($parts));
-      $this->port = array_shift($parts);
-    } else {
-      $this->host = urldecode($parts[0]);
+      throw new \InvalidArgumentException("Can't parse the uri `$uri`");
     }
   }
 
@@ -172,13 +223,16 @@ class Uri implements Interfaces\Uri {
    */
   public static function parseQueryString(string $str) {
     $q = array();
+
+    if ($str == '') return $q;
+
     $s = explode('&', $str);
     foreach ($s as $v) {
       $matches = array();
       $parts = explode('=', $v);
       $parts[0] = urldecode($parts[0]);
       $parts[1] = urldecode($parts[1]);
-      if (!preg_match('/^([^\\[]+)(\\[.+\\])?$/', $parts[0], $matches)) throw new \RuntimeException('Query string passed to setQuery has produced an error.');
+      if (!preg_match('/^([^\\[]+)(\\[.+\\])?$/', $parts[0], $matches)) { throw new \RuntimeException('Query string passed to setQuery has produced an error.'); }
       if (count($matches) < 2) throw new \RuntimeException('The query string match regex didn\'t work!');
 
       if (isset($matches[2])) $keys = explode("][", trim($matches[2], '[]'));
@@ -231,8 +285,16 @@ class Uri implements Interfaces\Uri {
 
   public function setQuery($query) {
     if (is_array($query)) $this->query = $query;
-    else $this->query = self::parseQueryString($query);
+    else $this->query = self::parseQueryString($query ?: '');
     return $this;
+  }
+
+  public function setWellKnownPort(string $scheme, int $port) {
+    static::$wellKnownPorts[$scheme] = $port;
+  }
+
+  public function toRelativeString(Uri $r) {
+    return $this->toString();
   }
 
   public function toString() {
