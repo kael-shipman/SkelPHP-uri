@@ -283,7 +283,7 @@ class UriTest extends TestCase {
       $this->assertEquals($r->getPort(), $uri->getPort());
       $this->assertEquals($r->getPath(), $uri->getPath());
       $this->assertEquals('something=new', $uri->getQueryString());
-      $this->assertEquals('', $uri->getFragment());
+      $this->assertEquals($r->getFragment(), $uri->getFragment());
     } catch (InvalidArgumentException $e) { $this->fail("Should not throw exception when changing query string"); }
   }
 
@@ -385,17 +385,17 @@ class UriTest extends TestCase {
     $u = new \Skel\Uri('ftp:', $r);
     $this->assertEquals($u->toString(), $u->toRelativeString($r), "Should print full string when scheme changes");
 
-    // Should print full string when host changes
-    $u = new \Skel\Uri($r->getScheme().'://new-example.com', $r);
-    $this->assertEquals($u->toString(), $u->toRelativeString($r), "Should print full string when host changes");
+    // Should print full string minus scheme when host changes
+    $u = new \Skel\Uri('//new-example.com', $r);
+    $this->assertEquals(substr($u->toString(), strlen($r->getScheme().':')), $u->toRelativeString($r), "Should print full string minus scheme when host changes");
 
     // Should print full string when port changes
-    $u = new \Skel\Uri('https://'.$r->getHost().':443', $r);
+    $u = new \Skel\Uri(':443', $r);
     $this->assertEquals($u->toString(), $u->toRelativeString($r), "Should print full string when port changes");
 
     // Should print path/query/fragment when path changes
     $u = new \Skel\Uri('/new/different/path', $r);
-    $this->assertEquals('/new/different/path?'.$r->getQueryString().'#'.$r->getFragment(), $u->toRelativeString($r), "Should print path/query/fragment when path changes");
+    $this->assertEquals('/new/different/path', $u->toRelativeString($r), "Should print path when path changes");
 
     // Should print query/fragment when just query changes
     $u = new \Skel\Uri('?new=query', $r);
