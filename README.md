@@ -12,7 +12,7 @@ Eventually, this package is intended to be loaded as a composer package. For now
 
 ```bash
 cd ~/my-website
-git submodule add git@github.com:kael-shipman/skelPHP-header.git app/dev-src/skelPHP/header
+git submodule add git@github.com:kael-shipman/skelphp-uri.git app/dev-src/skelphp/uri
 ```
 
 This allows me to develop it together with the website I'm building with it. For more on the (somewhat awkward and complex) concept of git submodules, see [this page](https://git-scm.com/book/en/v2/Git-Tools-Submodules).
