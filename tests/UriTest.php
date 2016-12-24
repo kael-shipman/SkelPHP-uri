@@ -326,10 +326,9 @@ class UriTest extends TestCase {
   }
 
   public function testSetQueryFromInvalidString() {
-    $this->fail("chalfant");
     $u = $this->getStaticUri('array');
     $u['query'] = '=notvalid&&&more=less&one=two&=3';
-    $uri = new Uri($u['scheme'].'://'.$u['host'].':'.$u['port'].$u['path'].'?'.$u['query'].'#'.$u['fragment']);
+    $uri = new \Skel\Uri($u['scheme'].'://'.$u['host'].':'.$u['port'].$u['path'].'?'.$u['query'].'#'.$u['fragment']);
     $this->assertEquals(array('more'=>'less', 'one' => 'two'), $uri->getQueryArray(), 'Invalid elements in query string should have been thrown out', 0.0, 10, true);
   }
 

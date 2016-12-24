@@ -161,9 +161,12 @@ class Uri implements Interfaces\Uri {
     foreach ($s as $v) {
       $matches = array();
       $parts = explode('=', $v);
+      if (count($parts) < 2 || strlen($parts[0]) == 0) continue;
+
       $parts[0] = urldecode($parts[0]);
       $parts[1] = urldecode($parts[1]);
-      if (strlen($parts[0]) > 0 && !preg_match('/^([^\\[]+)(\\[.+\\])?$/', $parts[0], $matches)) { throw new \RuntimeException('Query string passed to setQuery has produced an error.'); }
+
+      if (!preg_match('/^([^\\[]+)(\\[.+\\])?$/', $parts[0], $matches)) { throw new \RuntimeException('Query string passed to setQuery has produced an error.'); }
       if (count($matches) < 2) throw new \RuntimeException('The query string match regex didn\'t work!');
 
       if (isset($matches[2])) $keys = explode("][", trim($matches[2], '[]'));
