@@ -3,7 +3,6 @@
 $path = '.';
 
 require_once $path.'/vendor/autoload.php';
-require_once $path.'/vendor/skel/interfaces/Interfaces.php';
-require_once $path.'/Uri.php';
+require_once $path.'/src/Uri.php';
 
 ?>
